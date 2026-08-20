@@ -389,6 +389,77 @@ jobs:
               fi
           fi
 
+      - name: Apply Droid Spaces kernel configuration
+        if: steps.should_skip.outputs.skip != 'true'
+        run: |
+          CONFIG_FILE="${PWD}/arch/arm64/configs/$DEFCONFIG"
+          echo "Applying Droid Spaces kernel configuration to $DEFCONFIG"
+
+          # Apply one kernel config option to the defconfig.
+          # Usage: apply_config CONFIG_FOO [y|n] (default y)
+          apply_config() {
+            local option="$1" value="${2:-y}"
+            if grep -qE "^# ${option} is not set$" "$CONFIG_FILE"; then
+              if [ "$value" = "y" ]; then
+                sed -i "s/^# ${option} is not set$/${option}=y/" "$CONFIG_FILE"
+              fi
+            elif grep -qE "^${option}=" "$CONFIG_FILE"; then
+              if [ "$value" = "y" ]; then
+                sed -i "s/^${option}=.*$/${option}=y/" "$CONFIG_FILE"
+              else
+                sed -i "s/^${option}=.*$/# ${option} is not set/" "$CONFIG_FILE"
+              fi
+            else
+              if [ "$value" = "y" ]; then
+                echo "${option}=y" >> "$CONFIG_FILE"
+              else
+                echo "# ${option} is not set" >> "$CONFIG_FILE"
+              fi
+            fi
+          }
+
+          # Droid Spaces kernel configuration (non-GKI kernels):
+          # https://www.droidspaces.org/docs/kernel-configuration.html
+          for opt in \
+            CONFIG_SYSCTL CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE \
+            CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS \
+            CONFIG_SECCOMP CONFIG_SECCOMP_FILTER \
+            CONFIG_CGROUPS CONFIG_CGROUP_DEVICE CONFIG_CGROUP_PIDS CONFIG_MEMCG \
+            CONFIG_CGROUP_SCHED CONFIG_FAIR_GROUP_SCHED CONFIG_CGROUP_FREEZER \
+            CONFIG_CGROUP_NET_PRIO \
+            CONFIG_DEVTMPFS CONFIG_OVERLAY_FS \
+            CONFIG_TMPFS_POSIX_ACL CONFIG_TMPFS_XATTR \
+            CONFIG_FW_LOADER CONFIG_FW_LOADER_USER_HELPER CONFIG_FW_LOADER_COMPRESS \
+            CONFIG_NET_NS CONFIG_VETH CONFIG_BRIDGE \
+            CONFIG_NETFILTER CONFIG_BRIDGE_NETFILTER CONFIG_NETFILTER_ADVANCED \
+            CONFIG_NF_CONNTRACK CONFIG_IP_NF_IPTABLES CONFIG_IP_NF_FILTER \
+            CONFIG_NF_NAT CONFIG_NF_TABLES \
+            CONFIG_IP_NF_TARGET_MASQUERADE CONFIG_NETFILTER_XT_TARGET_MASQUERADE \
+            CONFIG_NETFILTER_XT_TARGET_TCPMSS CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
+            CONFIG_NF_CONNTRACK_NETLINK CONFIG_NF_NAT_REDIRECT \
+            CONFIG_IP_ADVANCED_ROUTER CONFIG_IP_MULTIPLE_TABLES \
+            CONFIG_NF_CONNTRACK_IPV4 CONFIG_NF_NAT_IPV4 CONFIG_IP_NF_NAT \
+            CONFIG_USER_NS \
+            CONFIG_NETFILTER_XT_MATCH_COMMENT CONFIG_NETFILTER_XT_MATCH_STATE \
+            CONFIG_NETFILTER_XT_MATCH_CONNTRACK CONFIG_NETFILTER_XT_MATCH_MULTIPORT \
+            CONFIG_NETFILTER_XT_MATCH_HL CONFIG_NETFILTER_XT_TARGET_REJECT \
+            CONFIG_IP_NF_TARGET_REJECT CONFIG_NETFILTER_XT_TARGET_LOG \
+            CONFIG_IP_NF_TARGET_ULOG CONFIG_NETFILTER_XT_MATCH_RECENT \
+            CONFIG_NETFILTER_XT_MATCH_LIMIT CONFIG_NETFILTER_XT_MATCH_HASHLIMIT \
+            CONFIG_NETFILTER_XT_MATCH_OWNER CONFIG_NETFILTER_XT_MATCH_PKTTYPE \
+            CONFIG_NETFILTER_XT_MATCH_MARK CONFIG_NETFILTER_XT_TARGET_MARK \
+            CONFIG_IP_SET CONFIG_IP_SET_HASH_IP CONFIG_IP_SET_HASH_NET \
+            CONFIG_NETFILTER_XT_SET CONFIG_NETFILTER_NETLINK_QUEUE \
+            CONFIG_NETFILTER_NETLINK_LOG CONFIG_NETFILTER_XT_TARGET_NFLOG
+          do
+            apply_config "$opt" y
+          done
+
+          # Droid Spaces: disable on older kernels to make internet work in containers
+          apply_config CONFIG_ANDROID_PARANOID_NETWORK n
+
+          echo "Droid Spaces configuration applied to $DEFCONFIG"
+
       - name: Build Kernel for ${{ matrix.branch }} (pm=${{ matrix.pm }})
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -527,6 +598,32 @@ jobs:
             git clone https://android.googlesource.com/platform/system/tools/mkbootimg/
             mkbootimg/mkbootimg.py "${cmdline[@]}"
           fi
+
+      - name: Verify Droid Spaces kernel configuration
+        if: steps.should_skip.outputs.skip != 'true'
+        run: |
+          echo "=== Droid Spaces config check (out/.config) ==="
+          for opt in CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS \
+                     CONFIG_CGROUP_DEVICE CONFIG_DEVTMPFS CONFIG_SECCOMP \
+                     CONFIG_OVERLAY_FS CONFIG_NET_NS CONFIG_VETH CONFIG_BRIDGE \
+                     CONFIG_USER_NS CONFIG_ANDROID_PARANOID_NETWORK
+          do
+            if [ "$opt" = "CONFIG_ANDROID_PARANOID_NETWORK" ]; then
+              if grep -q "^# ${opt} is not set$" out/.config; then
+                echo "OK   ${opt} disabled"
+              else
+                echo "WARN ${opt} is enabled"
+              fi
+              continue
+            fi
+            if grep -q "^${opt}=y$" out/.config; then
+              echo "OK   ${opt}=y"
+            elif grep -q "^# ${opt} is not set$" out/.config; then
+              echo "WARN ${opt} is not set"
+            else
+              echo "N/A  ${opt} (not available in this kernel)"
+            fi
+          done
 
       - name: Upload Kernel Artifact
         if: steps.should_skip.outputs.skip != 'true'
