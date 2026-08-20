@@ -396,11 +396,10 @@ jobs:
           CONFIG_SECCOMP CONFIG_SECCOMP_FILTER \
           CONFIG_CGROUPS CONFIG_CGROUP_DEVICE \
           CONFIG_CGROUP_SCHED CONFIG_FAIR_GROUP_SCHED CONFIG_CGROUP_FREEZER \
-          CONFIG_CGROUP_NET_PRIO \
           CONFIG_DEVTMPFS CONFIG_OVERLAY_FS \
           CONFIG_TMPFS_POSIX_ACL CONFIG_TMPFS_XATTR \
           CONFIG_FW_LOADER CONFIG_FW_LOADER_USER_HELPER CONFIG_FW_LOADER_COMPRESS \
-          CONFIG_NET_NS CONFIG_VETH CONFIG_BRIDGE \
+          CONFIG_VETH CONFIG_BRIDGE \
           CONFIG_NETFILTER CONFIG_BRIDGE_NETFILTER CONFIG_NETFILTER_ADVANCED \
           CONFIG_NF_CONNTRACK CONFIG_IP_NF_IPTABLES CONFIG_IP_NF_FILTER \
           CONFIG_NF_NAT CONFIG_NF_TABLES \
@@ -424,11 +423,17 @@ jobs:
           apply_config "$opt" y
         done
 
-        # CONFIG_MEMCG and CONFIG_USER_NS were found to cause boot panics on
-        # Huawei kernels that ship with them disabled (e.g. a panic in
-        # __kmalloc_track_caller with the vendor-patched SLUB). Only keep them
-        # when the stock defconfig already had them enabled.
-        for opt in CONFIG_MEMCG CONFIG_USER_NS; do
+        # These options are structural runtime changes that caused boot panics
+        # on Huawei kernels shipping with them disabled. MHA_HarmonyOS2.0
+        # panicked in __kmalloc_track_caller at get_freepointer() while init
+        # allocated an skb: the per-cpu freelist of the kmalloc cache was
+        # corrupted (confirmed by matching the pstore faulting instruction
+        # against the disassembly of this kernel). MEMCG and USER_NS were
+        # already ruled out; NET_NS and CGROUP_NET_PRIO change the network
+        # layer (struct sock layout, socket alloc hooks) where the crash
+        # occurs, so they are gated too. Only keep any of these when the
+        # stock defconfig already had them enabled.
+        for opt in CONFIG_MEMCG CONFIG_USER_NS CONFIG_NET_NS CONFIG_CGROUP_NET_PRIO; do
           if grep -qE "^${opt}=[ym]$" "$CONFIG_FILE"; then
             apply_config "$opt" y
           else
@@ -608,7 +613,7 @@ jobs:
           OBJDUMP=aarch64-linux-gnu-objdump
         fi
 
-        FUNC_ADDR=$(grep ' __kmalloc_track_caller$' out/System.map | awk '{print $1}')
+        FUNC_ADDR=$(grep ' __kmalloc_track_caller$' out/System.map | awk '{print $1}' || true)
         if [ -n "$FUNC_ADDR" ]; then
           echo "=== __kmalloc_track_caller at 0x$FUNC_ADDR ==="
           $OBJDUMP -d --start-address=0x$FUNC_ADDR --stop-address=0x$(printf '%x' $((0x$FUNC_ADDR + 0x320))) out/vmlinux || true
@@ -616,7 +621,7 @@ jobs:
           echo "__kmalloc_track_caller not found in System.map"
         fi
 
-        HOOK_ADDR=$(grep ' kmalloc_trace_hook$' out/System.map | awk '{print $1}')
+        HOOK_ADDR=$(grep ' kmalloc_trace_hook$' out/System.map | awk '{print $1}' || true)
         if [ -n "$HOOK_ADDR" ]; then
           echo "=== kmalloc_trace_hook at 0x$HOOK_ADDR ==="
           $OBJDUMP -d --start-address=0x$HOOK_ADDR --stop-address=0x$(printf '%x' $((0x$HOOK_ADDR + 0x300))) out/vmlinux || true
