@@ -633,6 +633,35 @@ jobs:
             mkbootimg/mkbootimg.py "${cmdline[@]}"
           fi
 
+      - name: Kernel panic diagnostics
+        if: steps.should_skip.outputs.skip != 'true'
+        run: |
+          echo "=== vendor hooks / tracing config ==="
+          grep -E '^(CONFIG_HISI_BB|CONFIG_HISI_MEM_TRACE|CONFIG_TRACING|CONFIG_FTRACE|CONFIG_HW_SLUB_DF|CONFIG_HW_SLUB_SANITIZE|CONFIG_IKCONFIG|CONFIG_HISI_RDR)=' out/.config || true
+
+          if [[ "$tool" == "gcc" ]]; then
+            export PATH=$PATH:$(pwd)/aarch64-linux-android-4.9/bin/
+            OBJDUMP=aarch64-linux-android-objdump
+          else
+            OBJDUMP=aarch64-linux-gnu-objdump
+          fi
+
+          FUNC_ADDR=$(grep ' __kmalloc_track_caller$' out/System.map | awk '{print $1}')
+          if [ -n "$FUNC_ADDR" ]; then
+            echo "=== __kmalloc_track_caller at 0x$FUNC_ADDR ==="
+            $OBJDUMP -d --start-address=0x$FUNC_ADDR --stop-address=0x$(printf '%x' $((0x$FUNC_ADDR + 0x320))) out/vmlinux || true
+          else
+            echo "__kmalloc_track_caller not found in System.map"
+          fi
+
+          HOOK_ADDR=$(grep ' kmalloc_trace_hook$' out/System.map | awk '{print $1}')
+          if [ -n "$HOOK_ADDR" ]; then
+            echo "=== kmalloc_trace_hook at 0x$HOOK_ADDR ==="
+            $OBJDUMP -d --start-address=0x$HOOK_ADDR --stop-address=0x$(printf '%x' $((0x$HOOK_ADDR + 0x300))) out/vmlinux || true
+          else
+            echo "kmalloc_trace_hook has no standalone symbol (compiled out as empty inline)"
+          fi
+
       - name: Verify Droid Spaces kernel configuration
         if: steps.should_skip.outputs.skip != 'true'
         run: |
@@ -672,4 +701,6 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: "${{ env.ARTIFACT_NAME }}.img"
+          path: |
+            ${{ env.ARTIFACT_NAME }}.img
+            out/System.map
