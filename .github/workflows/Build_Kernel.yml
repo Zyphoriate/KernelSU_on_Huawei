@@ -394,7 +394,7 @@ jobs:
           CONFIG_SYSCTL CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE \
           CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS \
           CONFIG_SECCOMP CONFIG_SECCOMP_FILTER \
-          CONFIG_CGROUPS CONFIG_CGROUP_DEVICE CONFIG_MEMCG \
+          CONFIG_CGROUPS CONFIG_CGROUP_DEVICE \
           CONFIG_CGROUP_SCHED CONFIG_FAIR_GROUP_SCHED CONFIG_CGROUP_FREEZER \
           CONFIG_CGROUP_NET_PRIO \
           CONFIG_DEVTMPFS CONFIG_OVERLAY_FS \
@@ -409,7 +409,6 @@ jobs:
           CONFIG_NF_CONNTRACK_NETLINK CONFIG_NF_NAT_REDIRECT \
           CONFIG_IP_ADVANCED_ROUTER CONFIG_IP_MULTIPLE_TABLES \
           CONFIG_NF_CONNTRACK_IPV4 CONFIG_NF_NAT_IPV4 CONFIG_IP_NF_NAT \
-          CONFIG_USER_NS \
           CONFIG_NETFILTER_XT_MATCH_COMMENT CONFIG_NETFILTER_XT_MATCH_STATE \
           CONFIG_NETFILTER_XT_MATCH_CONNTRACK CONFIG_NETFILTER_XT_MATCH_MULTIPORT \
           CONFIG_NETFILTER_XT_MATCH_HL CONFIG_NETFILTER_XT_TARGET_REJECT \
@@ -423,6 +422,18 @@ jobs:
           CONFIG_NETFILTER_NETLINK_LOG CONFIG_NETFILTER_XT_TARGET_NFLOG
         do
           apply_config "$opt" y
+        done
+
+        # CONFIG_MEMCG and CONFIG_USER_NS were found to cause boot panics on
+        # Huawei kernels that ship with them disabled (e.g. a panic in
+        # __kmalloc_track_caller with the vendor-patched SLUB). Only keep them
+        # when the stock defconfig already had them enabled.
+        for opt in CONFIG_MEMCG CONFIG_USER_NS; do
+          if grep -qE "^${opt}=[ym]$" "$CONFIG_FILE"; then
+            apply_config "$opt" y
+          else
+            echo "${opt} is disabled in the stock defconfig; leaving it disabled for boot safety"
+          fi
         done
 
         # Huawei vendor kernels ship their own pids cgroup (CONFIG_HW_CGROUP_PIDS=y).
