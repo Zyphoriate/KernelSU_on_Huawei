@@ -33,6 +33,12 @@ on:
         required: false
         type: string
         default: 'curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash'
+      droidspaces_profile:
+        description: 'Droid Spaces配置策略: full=完整选项(默认), safe=仅保留出厂已开启的选项(排查用)'
+        required: false
+        type: choice
+        default: 'full'
+        options: ['full', 'safe']
 
 jobs:
   build:
@@ -387,6 +393,19 @@ jobs:
             fi
           fi
         }
+
+        PROFILE='${{ github.event.inputs.droidspaces_profile }}'
+
+        if [ "$PROFILE" = "safe" ]; then
+          echo "Droid Spaces profile: safe (enable only the required namespace options)"
+          # Only enable the namespace options Droid Spaces needs to start
+          # containers; everything else keeps its stock defconfig value.
+          for opt in CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS; do
+            apply_config "$opt" y
+          done
+          echo "Safe profile applied; skipping the full Droid Spaces option list"
+          exit 0
+        fi
 
         # Droid Spaces kernel configuration (non-GKI kernels):
         # https://www.droidspaces.org/docs/kernel-configuration.html
