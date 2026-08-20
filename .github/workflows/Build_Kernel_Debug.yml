@@ -139,6 +139,8 @@ jobs:
         if: steps.should_skip.outputs.skip != 'true'
         uses: actions/checkout@v4
         with:
+          # The fork only has the default branch; kernel branches live on the upstream repo
+          repository: xixiaobei-bei/KernelSU_on_Huawei
           ref: ${{ matrix.branch }}
           submodules: false
           fetch-depth: 1
