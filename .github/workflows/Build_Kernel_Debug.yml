@@ -408,20 +408,20 @@ jobs:
           apply_config() {
             local option="$1" value="${2:-y}"
             if grep -qE "^# ${option} is not set$" "$CONFIG_FILE"; then
-              if [ "$value" = "y" ]; then
-                sed -i "s/^# ${option} is not set$/${option}=y/" "$CONFIG_FILE"
+              if [ "$value" != "n" ]; then
+                sed -i "s/^# ${option} is not set$/${option}=${value}/" "$CONFIG_FILE"
               fi
             elif grep -qE "^${option}=" "$CONFIG_FILE"; then
-              if [ "$value" = "y" ]; then
-                sed -i "s/^${option}=.*$/${option}=y/" "$CONFIG_FILE"
-              else
+              if [ "$value" = "n" ]; then
                 sed -i "s/^${option}=.*$/# ${option} is not set/" "$CONFIG_FILE"
+              else
+                sed -i "s/^${option}=.*$/${option}=${value}/" "$CONFIG_FILE"
               fi
             else
-              if [ "$value" = "y" ]; then
-                echo "${option}=y" >> "$CONFIG_FILE"
-              else
+              if [ "$value" = "n" ]; then
                 echo "# ${option} is not set" >> "$CONFIG_FILE"
+              else
+                echo "${option}=${value}" >> "$CONFIG_FILE"
               fi
             fi
           }
@@ -429,22 +429,28 @@ jobs:
           PROFILE='${{ github.event.inputs.droidspaces_profile }}'
 
           if [ "$PROFILE" = "safe" ]; then
-            echo "Droid Spaces profile: safe (required IPC/namespace options + TUN/BRIDGE/VETH)"
-            # Enable the IPC/namespace options Droid Spaces needs plus the
-            # minimal network device support (TUN/TAP, bridge, veth).
+            echo "Droid Spaces profile: safe (required IPC/namespace options + VETH)"
+            # Enable the IPC/namespace options Droid Spaces needs plus VETH.
             # Everything else keeps its stock defconfig value.
             # NOTE: CONFIG_IPC_NS depends on (SYSVIPC || POSIX_MQUEUE) on 4.9,
             # so both must be enabled or kconfig silently drops CONFIG_IPC_NS.
-            # NOTE: CONFIG_NET_NS and the netfilter isolation options are
-            # deliberately NOT enabled: they made this vendor kernel fail to
-            # boot. The stock kernel already ships a vendor netns implementation.
-            # CONFIG_VETH may be silently dropped by kconfig if it depends on
-            # CONFIG_NET_NS in this tree.
+            # NOTE: These options are known to break boot on this vendor kernel
+            # (freelist corruption panic in __kmalloc_track_caller) and are
+            # deliberately NOT enabled:
+            #   - CONFIG_NET_NS (stock kernel ships a vendor netns implementation)
+            #   - CONFIG_BRIDGE (pulls in STP/LLC/IGMP snooping; VETH alone boots,
+            #     so BRIDGE is the trigger)
+            #   - the netfilter isolation options (BRIDGE_NETFILTER, ADDRTYPE,
+            #     CONNTRACK_NETLINK, XT_MASQUERADE, ...)
             for opt in CONFIG_SYSCTL CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE \
                        CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS \
                        CONFIG_VETH; do
               apply_config "$opt" y
             done
+            # BRIDGE built as a module: built-in BRIDGE panics this vendor
+            # kernel at boot, but the module can be loaded on demand with
+            # insmod bridge.ko (+ llc.ko, stp.ko first).
+            apply_config CONFIG_BRIDGE m
             echo "Safe profile applied; skipping the full Droid Spaces option list"
             exit 0
           fi
@@ -460,7 +466,7 @@ jobs:
             CONFIG_DEVTMPFS CONFIG_OVERLAY_FS \
             CONFIG_TMPFS_POSIX_ACL CONFIG_TMPFS_XATTR \
             CONFIG_FW_LOADER CONFIG_FW_LOADER_USER_HELPER CONFIG_FW_LOADER_COMPRESS \
-            CONFIG_VETH CONFIG_BRIDGE \
+            CONFIG_VETH \
             CONFIG_NETFILTER CONFIG_BRIDGE_NETFILTER CONFIG_NETFILTER_ADVANCED \
             CONFIG_NF_CONNTRACK CONFIG_IP_NF_IPTABLES CONFIG_IP_NF_FILTER \
             CONFIG_NF_NAT CONFIG_NF_TABLES \
@@ -483,6 +489,10 @@ jobs:
           do
             apply_config "$opt" y
           done
+
+          # BRIDGE must stay a module on this vendor kernel (built-in BRIDGE
+          # panics at boot; load on demand with insmod bridge.ko).
+          apply_config CONFIG_BRIDGE m
 
           # These options are structural runtime changes that caused boot panics
           # on Huawei kernels shipping with them disabled. MHA_HarmonyOS2.0
@@ -721,8 +731,8 @@ jobs:
               fi
               continue
             fi
-            if grep -q "^${opt}=y$" out/.config; then
-              echo "OK   ${opt}=y"
+            if grep -q "^${opt}=[ym]$" out/.config; then
+              echo "OK   ${opt} enabled"
             elif grep -q "^# ${opt} is not set$" out/.config; then
               echo "WARN ${opt} is not set"
             else
@@ -738,3 +748,4 @@ jobs:
           path: |
             ${{ env.ARTIFACT_NAME }}.img
             out/System.map
+            out/**/*.ko
