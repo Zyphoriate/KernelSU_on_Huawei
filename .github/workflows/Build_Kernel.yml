@@ -397,13 +397,22 @@ jobs:
         PROFILE='${{ github.event.inputs.droidspaces_profile }}'
 
         if [ "$PROFILE" = "safe" ]; then
-          echo "Droid Spaces profile: safe (enable only the required IPC/namespace options)"
-          # Enable the IPC and namespace options Droid Spaces needs to start
-          # containers; everything else keeps its stock defconfig value.
+          echo "Droid Spaces profile: safe (required IPC/namespace + network isolation options)"
+          # Enable the IPC, namespace and network isolation options Droid
+          # Spaces needs; everything else keeps its stock defconfig value.
           # NOTE: CONFIG_IPC_NS depends on (SYSVIPC || POSIX_MQUEUE) on 4.9,
           # so both must be enabled or kconfig silently drops CONFIG_IPC_NS.
+          # CONFIG_VETH also depends on CONFIG_NET_NS.
           for opt in CONFIG_SYSCTL CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE \
-                     CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS; do
+                     CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS \
+                     CONFIG_NET_NS CONFIG_VETH CONFIG_BRIDGE \
+                     CONFIG_NETFILTER CONFIG_BRIDGE_NETFILTER CONFIG_NETFILTER_ADVANCED \
+                     CONFIG_NF_CONNTRACK CONFIG_IP_NF_IPTABLES CONFIG_IP_NF_FILTER \
+                     CONFIG_NF_NAT CONFIG_NF_TABLES \
+                     CONFIG_IP_NF_TARGET_MASQUERADE CONFIG_NETFILTER_XT_TARGET_MASQUERADE \
+                     CONFIG_NETFILTER_XT_TARGET_TCPMSS CONFIG_NETFILTER_XT_MATCH_ADDRTYPE \
+                     CONFIG_NF_CONNTRACK_NETLINK CONFIG_NF_NAT_REDIRECT \
+                     CONFIG_IP_ADVANCED_ROUTER CONFIG_IP_MULTIPLE_TABLES; do
             apply_config "$opt" y
           done
           echo "Safe profile applied; skipping the full Droid Spaces option list"
