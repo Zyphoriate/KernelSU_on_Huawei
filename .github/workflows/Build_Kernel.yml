@@ -410,7 +410,7 @@ jobs:
           # CONFIG_NET_NS in this tree.
           for opt in CONFIG_SYSCTL CONFIG_SYSVIPC CONFIG_POSIX_MQUEUE \
                      CONFIG_NAMESPACES CONFIG_PID_NS CONFIG_UTS_NS CONFIG_IPC_NS \
-                     CONFIG_TUN CONFIG_VETH CONFIG_BRIDGE; do
+                     CONFIG_VETH CONFIG_BRIDGE; do
             apply_config "$opt" y
           done
           echo "Safe profile applied; skipping the full Droid Spaces option list"
