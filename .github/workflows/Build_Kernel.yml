@@ -415,10 +415,6 @@ jobs:
                      CONFIG_USER_NS CONFIG_VETH; do
             apply_config "$opt" y
           done
-          # BRIDGE built as a module: built-in BRIDGE panics this vendor
-          # kernel at boot, but the module can be loaded on demand with
-          # insmod bridge.ko (+ llc.ko, stp.ko first).
-          apply_config CONFIG_BRIDGE m
           echo "Safe profile applied; skipping the full Droid Spaces option list"
           exit 0
         fi
